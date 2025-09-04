@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:14
+    container_name: w2m_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set_in_env}
+      POSTGRES_DB: ${POSTGRES_DB:-when2meet}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-when2meet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [ w2mnet ]
+    # Do NOT publish the DB port publicly in production
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: w2m_server
+    environment:
+      # SQLAlchemy URL points at the compose service name "db"
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-when2meet}
+      # CORS origins (adjust as needed; comma-separated)
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"      # expose API on host:8000
+    networks: [ w2mnet ]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./when2meet-ui
+      dockerfile: Dockerfile
+    container_name: w2m_frontend
+    ports:
+      - "3000:80"   # frontend available on host:3000
+    depends_on:
+      - server
+    networks: [ w2mnet ]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+networks:
+  w2mnet:
